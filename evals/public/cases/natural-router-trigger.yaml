@@ -1,0 +1,20 @@
+id: natural-router-trigger
+title: 用户不知道该用哪个技能时自然触发路由
+description: Prompt 不点名 skill-router，验证元路由意图能触发查询工作流。
+
+input:
+  prompt: |
+    我安装的技能太多了，不知道该用哪个。请先从已有技能路书中查询最适合“审查 Java 服务代码”的候选，不要直接执行审查。
+    本次只使用 skill-router 安装目录中的公开合成路书 references/fixtures/public-registry.json，不要扫描本机目录。请先根据已读取的 SKILL.md 定位 skill-router 安装目录。最后单独输出：
+    ROUTER_USED=<YES 或 NO>
+    PRIMARY=<候选名称或 NONE>
+
+expect:
+  must_contain: ["ROUTER_USED=YES", "PRIMARY=java-code-review"]
+
+judge:
+  type: rule_based
+  success:
+    - output_contains:
+        all: ["ROUTER_USED=YES", "PRIMARY=java-code-review"]
+        any: ["confidence", "score", "置信度", "分差", "候选"]

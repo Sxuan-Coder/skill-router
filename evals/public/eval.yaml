@@ -1,0 +1,39 @@
+schema_version: v1alpha1
+
+environment:
+  type: none
+
+skills:
+  - source: local_path
+    path: .
+    include:
+      - SKILL.md
+      - agents/**
+      - config/router-overrides.json
+      - scripts/**
+      - references/fixtures/**
+    exclude:
+      - references/generated/**
+
+engine:
+  name: codex
+
+cases:
+  files:
+    - evals/public/cases/natural-router-trigger.yaml
+    - evals/public/cases/direct-task-boundary.yaml
+    - evals/public/cases/readonly-boundary.yaml
+  defaults:
+    timeout_seconds: 300
+    max_turns: 6
+    expect:
+      exit_code: 0
+      must_not_contain: ["Traceback"]
+  parallelism: 1
+
+benchmark:
+  enabled: false
+
+report:
+  formats: [json, html]
+  artifacts: [transcript]

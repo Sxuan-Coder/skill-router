@@ -1,0 +1,4 @@
+interface:
+  display_name: "Skill Router"
+  short_description: "查询技能路书并给出带置信度、分差和理由的路由决策"
+  default_prompt: "使用 $skill-router 从用户级技能路书中选择当前任务的最小必要 skill 集。"

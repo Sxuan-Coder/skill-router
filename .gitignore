@@ -1,0 +1,34 @@
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local environments and editor state
+.venv/
+venv/
+.idea/
+.vscode/
+*.local.*
+
+# Machine-generated skill inventories and route books
+references/generated/
+.skill-router/
+
+# Local evaluation suites/results may reveal installed skill names and paths
+evals/eval.yaml
+evals/cases/
+evals/reports/
+evals/results/
+skill-up-results*/
+
+# Local override files; commit only the generic router-overrides.json
+config/router-overrides.local.json
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+Thumbs.db
+.DS_Store

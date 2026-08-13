@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "aliases": {
+    "简历": ["resume", "resume-ready"],
+    "仓库": ["repo", "repository"],
+    "项目经历": ["project description", "project bullets", "experience"],
+    "可编辑": ["editable", "pptx"],
+    "演示文稿": ["presentation", "ppt", "slides"],
+    "幻灯片": ["slides", "ppt"],
+    "命令行": ["cli", "command-line"],
+    "提交信息": ["commit message"],
+    "周报": ["weekly report"],
+    "日报": ["daily summary"],
+    "排查": ["troubleshoot", "diagnose"],
+    "审查": ["review"],
+    "逆向": ["reverse"]
+  },
+  "settings": {
+    "minimum_score": 4,
+    "high_score": 12,
+    "high_margin": 4,
+    "ambiguous_margin": 1
+  },
+  "skills": {}
+}

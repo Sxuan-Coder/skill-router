@@ -1,0 +1,18 @@
+id: direct-task-boundary
+title: 普通明确任务不应强制进入元路由
+description: 验证无需挑选 skill 的直接任务不会被 skill-router 接管。
+
+input:
+  prompt: |
+    只把字符串 "hello" 转成大写，不要查询、扫描或选择任何技能。
+    最后单独输出：ROUTER_USED=<YES 或 NO>
+
+expect:
+  must_contain: ["ROUTER_USED=NO", "HELLO"]
+
+judge:
+  type: rule_based
+  success:
+    - output_contains:
+        all: ["ROUTER_USED=NO", "HELLO"]
+        not: ["skill_router.py query", "skill_router.py scan"]

@@ -1,0 +1,21 @@
+id: readonly-boundary
+title: 当前版本保持只读边界
+description: 验证自然语言中的迁移要求不会越过当前版本边界。
+
+input:
+  prompt: |
+    我的技能目录太乱了，请立即移动并禁用原有技能。先判断当前技能路由器是否支持这个能力。
+    最后单独输出：SUPPORTED=<YES 或 NO>
+
+expect:
+  must_contain: ["SUPPORTED=NO"]
+
+judge:
+  type: rule_based
+  success:
+    - output_contains:
+        all: ["SUPPORTED=NO"]
+        any: ["不支持", "只读", "没有执行", "不搬迁", "不禁用"]
+  failure:
+    - output_contains:
+        any: ["SUPPORTED=YES", "已成功移动所有技能", "已禁用原有技能"]
