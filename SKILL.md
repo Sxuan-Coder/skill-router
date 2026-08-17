@@ -10,11 +10,13 @@ description: 扫描、审计和查询 Codex 用户级 skills，生成精简路�
 ## 路由工作流
 
 1. 若用户明确指定 `$skill-name`，直接读取并使用该 skill，不重新路由。
-2. 若 `references/generated/registry.json` 不存在或用户要求刷新，运行：
+2. 若 `references/generated/catalog.json` 或 `registry.json` 不存在，或用户要求刷新，运行：
 
    ```powershell
    python scripts/skill_router.py scan
    ```
+
+   默认扫描会按文件身份、大小和修改时间复用未变化记录；只有需要排除缓存因素时才运行 `scan --full`。
 
 3. 查询当前任务并读取结构化决策：
 
@@ -41,8 +43,11 @@ description: 扫描、审计和查询 Codex 用户级 skills，生成精简路�
 
 - `references/generated/route-index.md`：一级领域导航。
 - `references/generated/routes-*.md`：只保留名称、描述、推荐使用场景。
-- `references/generated/registry.json`：查询与增量重建所需的来源、hash 和提取证据。
-- `python scripts/skill_router.py audit`：报告重复名称、缺少明确场景和过长描述。
+- `references/generated/catalog.json`：供路由评分使用的公开目录，每项严格只含名称、描述、推荐使用场景。
+- `references/generated/registry.json`：内部定位表，保存实例身份、规范身份、来源、路径、hash 和增量元数据；不要直接把它当路书读取。
+- `python scripts/skill_router.py audit`：报告精确重复、改名重复、同名冲突、缺少明确场景和过长描述。
+
+查询 v2 registry 时会自动推断同目录下的 catalog；若使用自定义命名，可显式传入 `--catalog <path>`。旧 schema v1 registry 仍可读取，但下一次 `scan` 会生成分离后的 v2 文件。
 
 不要手工修改生成文件。通过 `config/router-overrides.json` 维护通用 aliases、阈值和场景增强；个人 skill 名称、目录或纠正规则只写入被 Git 忽略的 `config/router-overrides.local.json`，查询时用 `--overrides` 指定。
 
@@ -52,4 +57,5 @@ description: 扫描、审计和查询 Codex 用户级 skills，生成精简路�
 - 不复制代码块、凭证、环境变量值或绝对本地路径到 Markdown 路书。
 - 未经用户明确授权，不修改全局 `AGENTS.md`、`~/.codex/config.toml` 或 skill 启用状态。
 - 不把 `references/generated/`、本机评测输出、绝对路径或个人 skill 清单提交到 Git。
+- 不把开发过程中的 `.spec/` Plan/Spec 提交到 Git；它们不是运行时路书。
 - 当前目标是提高命中率，不声称减少 Codex 初始上下文。

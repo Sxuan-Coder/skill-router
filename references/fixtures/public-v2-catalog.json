@@ -1,0 +1,19 @@
+{
+  "schema_version": 2,
+  "skills": [
+    {
+      "name": "java-code-review",
+      "description": "Review Java service code and report correctness, reliability, and maintainability issues.",
+      "recommended_use": [
+        "Use when reviewing Java or Spring service code."
+      ]
+    },
+    {
+      "name": "document-export",
+      "description": "Export structured content into portable document formats.",
+      "recommended_use": [
+        "Use when creating a document deliverable."
+      ]
+    }
+  ]
+}

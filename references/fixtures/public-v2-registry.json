@@ -1,0 +1,58 @@
+{
+  "schema_version": 2,
+  "instances": [
+    {
+      "name": "java-code-review",
+      "description": "Review Java service code and report correctness, reliability, and maintainability issues.",
+      "recommended_use": [
+        "Use when reviewing Java or Spring service code."
+      ],
+      "scenario_source": "description",
+      "category": "development",
+      "source": "public-fixture",
+      "path": "fixtures/java-code-review/SKILL.md",
+      "content_hash": "fixture-java-code-review",
+      "boundaries": [],
+      "instance_id": "instance-java-code-review",
+      "canonical_id": "canonical-java-code-review",
+      "size_bytes": 128,
+      "mtime_ns": 0
+    },
+    {
+      "name": "document-export",
+      "description": "Export structured content into portable document formats.",
+      "recommended_use": [
+        "Use when creating a document deliverable."
+      ],
+      "scenario_source": "description",
+      "category": "documents",
+      "source": "public-fixture",
+      "path": "fixtures/document-export/SKILL.md",
+      "content_hash": "fixture-document-export",
+      "boundaries": [],
+      "instance_id": "instance-document-export",
+      "canonical_id": "canonical-document-export",
+      "size_bytes": 96,
+      "mtime_ns": 0
+    }
+  ],
+  "canonical_groups": [
+    {
+      "canonical_id": "canonical-java-code-review",
+      "catalog_index": 0,
+      "preferred_instance_id": "instance-java-code-review",
+      "instance_ids": [
+        "instance-java-code-review"
+      ]
+    },
+    {
+      "canonical_id": "canonical-document-export",
+      "catalog_index": 1,
+      "preferred_instance_id": "instance-document-export",
+      "instance_ids": [
+        "instance-document-export"
+      ]
+    }
+  ],
+  "errors": []
+}

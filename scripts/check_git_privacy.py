@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 FORBIDDEN_PATHS = (
+    ".spec/",
     "references/generated/",
     "evals/cases/",
     "evals/reports/",

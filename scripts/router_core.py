@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import html
-import json
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 
 MAX_SKILL_BYTES = 1_000_000
@@ -68,6 +67,17 @@ class SkillRecord:
     path: str
     content_hash: str
     boundaries: list[str]
+    instance_id: str = ""
+    canonical_id: str = ""
+    size_bytes: int = 0
+    mtime_ns: int = 0
+
+
+@dataclass(frozen=True)
+class ScanStats:
+    discovered: int
+    parsed: int
+    reused: int
 
 
 def normalize(text: str) -> str:
@@ -188,7 +198,8 @@ def portable_path(path: Path) -> str:
 
 
 def parse_skill(path: Path, source: str) -> SkillRecord:
-    if path.stat().st_size > MAX_SKILL_BYTES:
+    stat = path.stat()
+    if stat.st_size > MAX_SKILL_BYTES:
         raise ValueError(f"文件超过 {MAX_SKILL_BYTES} 字节限制")
     raw = path.read_text(encoding="utf-8-sig")
     metadata, body = parse_frontmatter(raw)
@@ -198,6 +209,8 @@ def parse_skill(path: Path, source: str) -> SkillRecord:
         raise ValueError("frontmatter 缺少 name 或 description")
     scenarios, scenario_source = infer_scenarios(description, body)
     boundaries = section_items(body, BOUNDARY_HEADINGS)[:3]
+    portable = portable_path(path)
+    semantic = f"{normalize(description).casefold()}\n{normalize(body)}"
     return SkillRecord(
         name=name,
         description=description,
@@ -205,20 +218,36 @@ def parse_skill(path: Path, source: str) -> SkillRecord:
         scenario_source=scenario_source,
         category=classify(name, description, scenarios),
         source=source,
-        path=portable_path(path),
+        path=portable,
         content_hash=hashlib.sha256(raw.encode("utf-8")).hexdigest(),
         boundaries=boundaries,
+        instance_id=identity_hash(f"{source}\n{portable}"),
+        canonical_id=identity_hash(semantic),
+        size_bytes=stat.st_size,
+        mtime_ns=stat.st_mtime_ns,
     )
 
 
 def scan_roots(roots: list[Path]) -> tuple[list[SkillRecord], list[dict[str, str]]]:
+    records, errors, _ = scan_roots_with_stats(roots)
+    return records, errors
+
+
+def scan_roots_with_stats(
+    roots: list[Path],
+    previous: list[SkillRecord] | None = None,
+    force: bool = False,
+) -> tuple[list[SkillRecord], list[dict[str, str]], ScanStats]:
     records: list[SkillRecord] = []
     errors: list[dict[str, str]] = []
     seen_paths: set[Path] = set()
+    cached = {item.instance_id: item for item in (previous or []) if item.instance_id}
+    discovered = parsed = reused = 0
     for root in roots:
         root = root.expanduser().resolve()
         if not root.exists():
             continue
+        source = portable_path(root)
         for path in sorted(root.rglob("SKILL.md")):
             relative = path.relative_to(root)
             if ".system" in relative.parts or path.parent.name == "skill-router":
@@ -227,46 +256,22 @@ def scan_roots(roots: list[Path]) -> tuple[list[SkillRecord], list[dict[str, str
             if resolved in seen_paths:
                 continue
             seen_paths.add(resolved)
+            discovered += 1
             try:
-                records.append(parse_skill(path, portable_path(root)))
+                stat = path.stat()
+                key = identity_hash(f"{source}\n{portable_path(path)}")
+                old = cached.get(key)
+                if not force and old and old.size_bytes == stat.st_size and old.mtime_ns == stat.st_mtime_ns:
+                    records.append(old)
+                    reused += 1
+                else:
+                    records.append(parse_skill(path, source))
+                    parsed += 1
             except (OSError, UnicodeError, ValueError) as exc:
                 errors.append({"path": portable_path(path), "error": str(exc)})
-    return sorted(records, key=lambda item: (item.category, item.name, item.path)), errors
+    ordered = sorted(records, key=lambda item: (item.category, item.name, item.path))
+    return ordered, errors, ScanStats(discovered, parsed, reused)
 
 
-def write_outputs(records: list[SkillRecord], errors: list[dict[str, str]], output: Path) -> None:
-    output.mkdir(parents=True, exist_ok=True)
-    payload = {"schema_version": 1, "skills": [asdict(item) for item in records], "errors": errors}
-    _atomic_write(output / "registry.json", json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
-    groups: dict[str, list[SkillRecord]] = {key: [] for key in CATEGORIES}
-    for item in records:
-        groups[item.category].append(item)
-    index_lines = ["# Skill 路书", "", "按任务领域只读取一个相关路由页，再读取命中 skill 的完整 `SKILL.md`。", ""]
-    expected_routes: set[Path] = set()
-    for key, label in CATEGORIES.items():
-        if not groups[key]:
-            continue
-        filename = f"routes-{key}.md"
-        expected_routes.add(output / filename)
-        index_lines.append(f"- [{label}]({filename})：{len(groups[key])} 个 skill")
-        lines = [f"# {label}", "", "此文件由 skill-router 生成，请勿手工修改。", ""]
-        for item in groups[key]:
-            name = safe_markdown(item.name)
-            desc = clip_text(safe_markdown(item.description), 240)
-            scenarios = "；".join(safe_markdown(value) for value in item.recommended_use)
-            lines.extend([f"## {name}", "", f"- 描述：{desc}", f"- 推荐使用场景：{scenarios}", ""])
-        _atomic_write(output / filename, "\n".join(lines).rstrip() + "\n")
-    _atomic_write(output / "route-index.md", "\n".join(index_lines).rstrip() + "\n")
-    for stale in set(output.glob("routes-*.md")) - expected_routes:
-        stale.unlink()
-
-
-def _atomic_write(path: Path, content: str) -> None:
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(content, encoding="utf-8", newline="\n")
-    temporary.replace(path)
-
-
-def load_registry(path: Path) -> list[SkillRecord]:
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    return [SkillRecord(**item) for item in payload["skills"]]
+def identity_hash(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()

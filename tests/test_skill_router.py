@@ -19,7 +19,8 @@ from query_engine import (
     query,
 )
 from check_git_privacy import scan as privacy_scan
-from router_core import SkillRecord, classify, infer_scenarios, load_registry, parse_frontmatter, scan_roots, write_outputs
+from catalog_store import load_registry, write_outputs
+from router_core import SkillRecord, classify, infer_scenarios, parse_frontmatter, scan_roots
 
 
 class SkillRouterTests(unittest.TestCase):
@@ -74,8 +75,13 @@ class SkillRouterTests(unittest.TestCase):
             self.assertIn("- 推荐使用场景：", route)
             self.assertNotIn("content_hash", route)
             self.assertNotIn(str(root), route)
+            catalog = json.loads((output / "catalog.json").read_text(encoding="utf-8"))
             registry = json.loads((output / "registry.json").read_text(encoding="utf-8"))
-            self.assertEqual(1, len(registry["skills"]))
+            self.assertEqual(
+                {"name", "description", "recommended_use"},
+                set(catalog["skills"][0]),
+            )
+            self.assertEqual(1, len(registry["instances"]))
 
     def test_generation_removes_stale_route_pages(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

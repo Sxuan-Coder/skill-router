@@ -6,6 +6,7 @@ __pycache__/
 htmlcov/
 
 # Local environments and editor state
+.spec/
 .venv/
 venv/
 .idea/
