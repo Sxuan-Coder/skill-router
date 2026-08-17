@@ -20,7 +20,8 @@ from query_engine import (
 )
 from check_git_privacy import scan as privacy_scan
 from catalog_store import load_registry, write_outputs
-from router_core import SkillRecord, classify, infer_scenarios, parse_frontmatter, scan_roots
+from router_core import SkillRecord, classify, infer_scenarios, parse_frontmatter
+from scan_engine import scan_roots
 
 
 class SkillRouterTests(unittest.TestCase):

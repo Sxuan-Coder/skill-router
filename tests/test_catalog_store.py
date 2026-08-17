@@ -9,7 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from catalog_store import duplicate_report, load_registry, load_registry_instances, write_outputs
-from router_core import scan_roots
+from scan_engine import scan_roots
 
 
 class CatalogStoreTests(unittest.TestCase):
@@ -29,7 +29,9 @@ class CatalogStoreTests(unittest.TestCase):
             records, errors = scan_roots([root])
             write_outputs(records, errors, output)
             catalog = json.loads((output / "catalog.json").read_text(encoding="utf-8"))
+            registry = json.loads((output / "registry.json").read_text(encoding="utf-8"))
             self.assertEqual(2, catalog["schema_version"])
+            self.assertEqual(3, registry["schema_version"])
             self.assertEqual(
                 {"name", "description", "recommended_use"},
                 set(catalog["skills"][0]),
@@ -60,7 +62,7 @@ class CatalogStoreTests(unittest.TestCase):
             self.assertEqual(1, len(report["exact_duplicates"]))
             self.assertEqual(1, len(report["name_conflicts"]))
 
-    def test_v2_registry_loads_catalog_representatives_and_all_instances(self) -> None:
+    def test_v3_registry_loads_catalog_representatives_and_all_instances(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root, output = Path(temp) / "skills", Path(temp) / "out"
             first = self.make_skill(root, "one", "shared", "Shared behavior.")
@@ -86,6 +88,14 @@ class CatalogStoreTests(unittest.TestCase):
         records = load_registry(fixture)
         self.assertEqual(["java-code-review", "document-export"], [item.name for item in records])
         self.assertEqual("fixtures/java-code-review/SKILL.md", records[0].path)
+
+    def test_public_v3_fixture_uses_preferred_cross_source_instance(self) -> None:
+        fixture = Path(__file__).resolve().parents[1] / "references" / "fixtures" / "public-v3-registry.json"
+        records = load_registry(fixture)
+        instances = load_registry_instances(fixture)
+        self.assertEqual(2, len(records))
+        self.assertEqual(3, len(instances))
+        self.assertEqual("codex-user", records[0].source_id)
 
 
 if __name__ == "__main__":

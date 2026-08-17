@@ -1,0 +1,113 @@
+{
+  "schema_version": 3,
+  "sources": [
+    {
+      "id": "codex-user",
+      "label": "Codex User",
+      "ecosystem": "codex",
+      "relative_root": ".codex/skills",
+      "priority": 10,
+      "available": true,
+      "instances": 1
+    },
+    {
+      "id": "agents-user",
+      "label": "Agents User",
+      "ecosystem": "agents",
+      "relative_root": ".agents/skills",
+      "priority": 20,
+      "available": true,
+      "instances": 1
+    },
+    {
+      "id": "claude-user",
+      "label": "Claude Code User",
+      "ecosystem": "claude",
+      "relative_root": ".claude/skills",
+      "priority": 40,
+      "available": true,
+      "instances": 1
+    }
+  ],
+  "instances": [
+    {
+      "name": "java-code-review",
+      "description": "Review Java service code and report correctness, reliability, and maintainability issues.",
+      "recommended_use": ["Use when reviewing Java or Spring service code."],
+      "scenario_source": "description",
+      "category": "development",
+      "source": "codex-user",
+      "path": "fixtures/codex/java-code-review/SKILL.md",
+      "content_hash": "fixture-java-code-review",
+      "boundaries": [],
+      "instance_id": "instance-codex-java-code-review",
+      "canonical_id": "canonical-java-code-review",
+      "size_bytes": 128,
+      "mtime_ns": 0,
+      "source_id": "codex-user",
+      "relative_path": "java-code-review/SKILL.md",
+      "physical_id": "physical-codex-java-code-review",
+      "source_priority": 10
+    },
+    {
+      "name": "java-code-review",
+      "description": "Review Java service code and report correctness, reliability, and maintainability issues.",
+      "recommended_use": ["Use when reviewing Java or Spring service code."],
+      "scenario_source": "description",
+      "category": "development",
+      "source": "agents-user",
+      "path": "fixtures/agents/java-code-review/SKILL.md",
+      "content_hash": "fixture-java-code-review",
+      "boundaries": [],
+      "instance_id": "instance-agents-java-code-review",
+      "canonical_id": "canonical-java-code-review",
+      "size_bytes": 128,
+      "mtime_ns": 0,
+      "source_id": "agents-user",
+      "relative_path": "java-code-review/SKILL.md",
+      "physical_id": "physical-agents-java-code-review",
+      "source_priority": 20
+    },
+    {
+      "name": "document-export",
+      "description": "Export structured content into portable document formats.",
+      "recommended_use": ["Use when creating a document deliverable."],
+      "scenario_source": "description",
+      "category": "documents",
+      "source": "claude-user",
+      "path": "fixtures/claude/document-export/SKILL.md",
+      "content_hash": "fixture-document-export",
+      "boundaries": [],
+      "instance_id": "instance-claude-document-export",
+      "canonical_id": "canonical-document-export",
+      "size_bytes": 96,
+      "mtime_ns": 0,
+      "source_id": "claude-user",
+      "relative_path": "document-export/SKILL.md",
+      "physical_id": "physical-claude-document-export",
+      "source_priority": 40
+    }
+  ],
+  "canonical_groups": [
+    {
+      "canonical_id": "canonical-java-code-review",
+      "catalog_index": 0,
+      "preferred_instance_id": "instance-codex-java-code-review",
+      "preferred_reason": "source_priority=10;scenario_source=description",
+      "instance_ids": [
+        "instance-codex-java-code-review",
+        "instance-agents-java-code-review"
+      ]
+    },
+    {
+      "canonical_id": "canonical-document-export",
+      "catalog_index": 1,
+      "preferred_instance_id": "instance-claude-document-export",
+      "preferred_reason": "source_priority=40;scenario_source=description",
+      "instance_ids": [
+        "instance-claude-document-export"
+      ]
+    }
+  ],
+  "errors": []
+}

@@ -4,45 +4,61 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Callable
 
 from router_core import CATEGORIES, SkillRecord, clip_text, safe_markdown
 
 CATALOG_FIELDS = {"name", "description", "recommended_use"}
+SCENARIO_PRIORITY = {"body": 0, "description": 1, "inferred": 2, "missing": 3}
 
 
-def write_outputs(records: list[SkillRecord], errors: list[dict[str, str]], output: Path) -> None:
+@dataclass(frozen=True)
+class CanonicalGroup:
+    canonical_id: str
+    instances: list[SkillRecord]
+    preferred: SkillRecord
+    preferred_reason: str
+
+
+def write_outputs(
+    records: list[SkillRecord],
+    errors: list[dict[str, str]],
+    output: Path,
+    sources: list[dict[str, object]] | None = None,
+) -> None:
     output.mkdir(parents=True, exist_ok=True)
     groups = canonical_groups(records)
-    catalog = [_public_entry(group[2]) for group in groups]
+    catalog = [_public_entry(group.preferred) for group in groups]
     registry_groups = [
         {
-            "canonical_id": canonical_id,
+            "canonical_id": group.canonical_id,
             "catalog_index": index,
-            "preferred_instance_id": preferred.instance_id,
-            "instance_ids": [item.instance_id for item in instances],
+            "preferred_instance_id": group.preferred.instance_id,
+            "preferred_reason": group.preferred_reason,
+            "instance_ids": [item.instance_id for item in group.instances],
         }
-        for index, (canonical_id, instances, preferred) in enumerate(groups)
+        for index, group in enumerate(groups)
     ]
     registry = {
-        "schema_version": 2,
+        "schema_version": 3,
+        "sources": sources or _infer_sources(records),
         "instances": [asdict(item) for item in records],
         "canonical_groups": registry_groups,
         "errors": errors,
     }
     _atomic_json(output / "catalog.json", {"schema_version": 2, "skills": catalog})
     _atomic_json(output / "registry.json", registry)
-    _write_route_pages([group[2] for group in groups], output)
+    _write_route_pages([group.preferred for group in groups], output)
 
 
 def load_registry(path: Path, catalog_path: Path | None = None) -> list[SkillRecord]:
     payload = _read_json(path)
     if payload.get("schema_version") == 1:
         return [_record(item) for item in payload["skills"]]
-    if payload.get("schema_version") != 2:
-        raise ValueError("registry 仅支持 schema_version 1 或 2")
+    if payload.get("schema_version") not in {2, 3}:
+        raise ValueError("registry 仅支持 schema_version 1、2 或 3")
     catalog = _read_catalog(catalog_path or infer_catalog_path(path))
     records = [_record(item) for item in payload["instances"]]
     instances = {item.instance_id: item for item in records}
@@ -63,9 +79,9 @@ def load_registry_instances(path: Path) -> list[SkillRecord]:
     payload = _read_json(path)
     if payload.get("schema_version") == 1:
         return [_record(item) for item in payload["skills"]]
-    if payload.get("schema_version") == 2:
+    if payload.get("schema_version") in {2, 3}:
         return [_record(item) for item in payload["instances"]]
-    raise ValueError("registry 仅支持 schema_version 1 或 2")
+    raise ValueError("registry 仅支持 schema_version 1、2 或 3")
 
 
 def infer_catalog_path(registry_path: Path) -> Path:
@@ -77,15 +93,21 @@ def infer_catalog_path(registry_path: Path) -> Path:
 
 def canonical_groups(
     records: list[SkillRecord],
-) -> list[tuple[str, list[SkillRecord], SkillRecord]]:
+) -> list[CanonicalGroup]:
     grouped: dict[str, list[SkillRecord]] = defaultdict(list)
     for item in records:
         grouped[item.canonical_id or item.content_hash].append(item)
     result = []
     for canonical_id, instances in grouped.items():
-        ordered = sorted(instances, key=lambda item: (item.source, item.path, item.name))
-        result.append((canonical_id, ordered, ordered[0]))
-    return sorted(result, key=lambda group: (group[2].category, group[2].name, group[0]))
+        ordered = sorted(instances, key=lambda item: (item.instance_id, item.path))
+        preferred = min(ordered, key=_preferred_key)
+        reason = f"source_priority={preferred.source_priority};scenario_source={preferred.scenario_source}"
+        result.append(CanonicalGroup(canonical_id, ordered, preferred, reason))
+    return sorted(result, key=lambda group: (
+        group.preferred.category,
+        group.preferred.name,
+        group.canonical_id,
+    ))
 
 
 def duplicate_report(records: list[SkillRecord]) -> dict[str, list[dict[str, object]]]:
@@ -94,11 +116,13 @@ def duplicate_report(records: list[SkillRecord]) -> dict[str, list[dict[str, obj
     renamed = [item for item in canonical if len(set(item["names"])) > 1]
     by_name = _duplicates(records, lambda item: item.name.casefold())
     conflicts = [item for item in by_name if len(set(item["canonical_ids"])) > 1]
+    physical = _duplicates(records, lambda item: item.physical_id)
     return {
         "exact_duplicates": exact,
         "canonical_duplicates": canonical,
         "renamed_duplicates": renamed,
         "name_conflicts": conflicts,
+        "physical_duplicates": physical,
     }
 
 
@@ -108,7 +132,9 @@ def _duplicates(
 ) -> list[dict[str, object]]:
     grouped: dict[str, list[SkillRecord]] = defaultdict(list)
     for item in records:
-        grouped[key_function(item)].append(item)
+        key = key_function(item)
+        if key:
+            grouped[key].append(item)
     return [
         {
             "key": key,
@@ -116,6 +142,7 @@ def _duplicates(
             "canonical_ids": [item.canonical_id or item.content_hash for item in items],
             "names": [item.name for item in items],
             "paths": [item.path for item in items],
+            "source_ids": [item.source_id or item.source for item in items],
         }
         for key, items in sorted(grouped.items()) if len(items) > 1
     ]
@@ -127,6 +154,39 @@ def _public_entry(item: SkillRecord) -> dict[str, object]:
         "description": safe_markdown(item.description),
         "recommended_use": [safe_markdown(value) for value in item.recommended_use],
     }
+
+
+def _preferred_key(item: SkillRecord) -> tuple[int, int, int, int, str]:
+    scenario_rank = SCENARIO_PRIORITY.get(item.scenario_source, 4)
+    scenario_size = sum(len(value) for value in item.recommended_use)
+    return (
+        item.source_priority,
+        scenario_rank,
+        -len(item.description),
+        -scenario_size,
+        item.instance_id or item.path,
+    )
+
+
+def _infer_sources(records: list[SkillRecord]) -> list[dict[str, object]]:
+    counts: dict[str, int] = defaultdict(int)
+    priorities: dict[str, int] = {}
+    for item in records:
+        source_id = item.source_id or item.source
+        counts[source_id] += 1
+        priorities[source_id] = item.source_priority
+    return [
+        {
+            "id": source_id,
+            "label": source_id,
+            "ecosystem": "custom",
+            "relative_root": "",
+            "priority": priorities[source_id],
+            "available": True,
+            "instances": count,
+        }
+        for source_id, count in sorted(counts.items())
+    ]
 
 
 def _read_catalog(path: Path) -> list[dict[str, object]]:

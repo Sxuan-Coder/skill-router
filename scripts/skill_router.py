@@ -11,7 +11,15 @@ from pathlib import Path
 
 from query_engine import QueryCandidate, RoutingDecision, decide, load_overrides, merge_overrides
 from catalog_store import duplicate_report, load_registry, load_registry_instances, write_outputs
-from router_core import CATEGORIES, safe_markdown, scan_roots_with_stats
+from router_core import CATEGORIES, SkillRecord, safe_markdown
+from scan_engine import ScanStats, scan_roots_with_stats
+from source_adapters import (
+    DEFAULT_SOURCES,
+    SourceStatus,
+    discover_sources,
+    scan_user_sources,
+    select_sources,
+)
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT = SKILL_ROOT / "references" / "generated"
@@ -23,7 +31,11 @@ def parser() -> argparse.ArgumentParser:
     subcommands = root.add_subparsers(dest="command", required=True)
 
     scan = subcommands.add_parser("scan", help="扫描并重建路书")
-    scan.add_argument("--root", action="append", type=Path, help="扫描根目录；可重复")
+    selection = scan.add_mutually_exclusive_group()
+    selection.add_argument("--root", action="append", type=Path, help="自定义扫描根；可重复")
+    selection.add_argument("--source", action="append", help="用户级 source ID；可重复")
+    selection.add_argument("--all-user-sources", action="store_true", help="扫描全部用户级来源")
+    scan.add_argument("--home", type=Path, default=Path.home(), help="用户来源相对目录的解析基准")
     scan.add_argument("--output", type=Path, default=DEFAULT_OUTPUT, help="生成目录")
     scan.add_argument("--json", action="store_true", help="输出 JSON 摘要")
     scan.add_argument("--full", action="store_true", help="忽略旧 registry 并强制重新解析")
@@ -39,19 +51,52 @@ def parser() -> argparse.ArgumentParser:
     audit = subcommands.add_parser("audit", help="审计重复、场景和描述质量")
     audit.add_argument("--registry", type=Path, default=DEFAULT_REGISTRY)
     audit.add_argument("--json", action="store_true")
+
+    sources = subcommands.add_parser("sources", help="查看用户级来源可用性")
+    sources.add_argument("--home", type=Path, default=Path.home(), help="用户来源相对目录的解析基准")
+    sources.add_argument("--json", action="store_true")
     return root
 
 
 def scan_command(args: argparse.Namespace) -> int:
-    roots = args.root or [Path.home() / ".codex" / "skills"]
     previous = []
     if not args.full and (args.output / "registry.json").exists():
         previous = load_registry_instances(args.output / "registry.json")
-    records, errors, stats = scan_roots_with_stats(roots, previous, args.full)
-    write_outputs(records, errors, args.output)
+    try:
+        records, errors, stats, statuses = _scan_records(args, previous)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    write_outputs(records, errors, args.output, [item.to_dict() for item in statuses])
+    summary = _scan_summary(args, records, errors, stats, statuses)
+    if args.json:
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+    else:
+        print(f"已索引 {len(records)} 个实例，解析 {stats.parsed}，复用 {stats.reused}，错误 {len(errors)}。")
+        print(f"输出目录：{args.output.resolve()}")
+    return 0 if records else 2
+
+
+def _scan_records(
+    args: argparse.Namespace,
+    previous: list[SkillRecord],
+) -> tuple[list[SkillRecord], list[dict[str, str]], ScanStats, list[SourceStatus]]:
+    if args.root:
+        records, errors, stats = scan_roots_with_stats(args.root, previous, args.full)
+        return records, errors, stats, []
+    specs = select_sources(args.source, args.all_user_sources)
+    return scan_user_sources(specs, args.home, previous, args.full)
+
+
+def _scan_summary(
+    args: argparse.Namespace,
+    records: list[SkillRecord],
+    errors: list[dict[str, str]],
+    stats: ScanStats,
+    statuses: list[SourceStatus],
+) -> dict[str, object]:
     categories = collections.Counter(item.category for item in records)
     summary = {
-        "roots": [str(path.expanduser()) for path in roots],
         "instances": len(records),
         "skills": len(load_registry(args.output / "registry.json")),
         "errors": len(errors),
@@ -60,12 +105,11 @@ def scan_command(args: argparse.Namespace) -> int:
         "categories": {CATEGORIES[key]: categories[key] for key in CATEGORIES if categories[key]},
         "output": str(args.output.resolve()),
     }
-    if args.json:
-        print(json.dumps(summary, ensure_ascii=False, indent=2))
+    if args.root:
+        summary["roots"] = [str(path.expanduser()) for path in args.root]
     else:
-        print(f"已索引 {len(records)} 个实例，解析 {stats.parsed}，复用 {stats.reused}，错误 {len(errors)}。")
-        print(f"输出目录：{args.output.resolve()}")
-    return 0 if records else 2
+        summary["sources"] = [item.public_dict() for item in statuses]
+    return summary
 
 
 def query_command(args: argparse.Namespace) -> int:
@@ -161,7 +205,20 @@ def audit_command(args: argparse.Namespace) -> int:
         print(f"精确重复组：{len(report['exact_duplicates'])}")
         print(f"改名重复组：{len(report['renamed_duplicates'])}")
         print(f"同名冲突组：{len(report['name_conflicts'])}")
+        print(f"同一物理文件组：{len(report['physical_duplicates'])}")
     return 1 if report["missing_scenarios"] else 0
+
+
+def sources_command(args: argparse.Namespace) -> int:
+    _, statuses = discover_sources(DEFAULT_SOURCES, args.home)
+    payload = {"schema_version": 1, "sources": [item.public_dict() for item in statuses]}
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        for item in statuses:
+            state = "available" if item.available else "unavailable"
+            print(f"- {item.source_id}：{state}，{item.instances} 个实例")
+    return 0
 
 
 def main() -> int:
@@ -171,6 +228,8 @@ def main() -> int:
         return scan_command(args)
     if args.command == "query":
         return query_command(args)
+    if args.command == "sources":
+        return sources_command(args)
     return audit_command(args)
 
 

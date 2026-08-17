@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from router_core import scan_roots_with_stats
+from scan_engine import scan_roots_with_stats
 
 
 class IncrementalScanTests(unittest.TestCase):

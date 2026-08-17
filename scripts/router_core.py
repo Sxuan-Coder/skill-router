@@ -71,13 +71,10 @@ class SkillRecord:
     canonical_id: str = ""
     size_bytes: int = 0
     mtime_ns: int = 0
-
-
-@dataclass(frozen=True)
-class ScanStats:
-    discovered: int
-    parsed: int
-    reused: int
+    source_id: str = ""
+    relative_path: str = ""
+    physical_id: str = ""
+    source_priority: int = 100
 
 
 def normalize(text: str) -> str:
@@ -197,7 +194,12 @@ def portable_path(path: Path) -> str:
         return resolved.as_posix()
 
 
-def parse_skill(path: Path, source: str) -> SkillRecord:
+def parse_skill(
+    path: Path,
+    source: str,
+    relative_path: str | None = None,
+    source_priority: int = 100,
+) -> SkillRecord:
     stat = path.stat()
     if stat.st_size > MAX_SKILL_BYTES:
         raise ValueError(f"文件超过 {MAX_SKILL_BYTES} 字节限制")
@@ -210,6 +212,7 @@ def parse_skill(path: Path, source: str) -> SkillRecord:
     scenarios, scenario_source = infer_scenarios(description, body)
     boundaries = section_items(body, BOUNDARY_HEADINGS)[:3]
     portable = portable_path(path)
+    relative = relative_path or portable
     semantic = f"{normalize(description).casefold()}\n{normalize(body)}"
     return SkillRecord(
         name=name,
@@ -221,57 +224,24 @@ def parse_skill(path: Path, source: str) -> SkillRecord:
         path=portable,
         content_hash=hashlib.sha256(raw.encode("utf-8")).hexdigest(),
         boundaries=boundaries,
-        instance_id=identity_hash(f"{source}\n{portable}"),
+        instance_id=identity_hash(f"{source}\n{relative}"),
         canonical_id=identity_hash(semantic),
         size_bytes=stat.st_size,
         mtime_ns=stat.st_mtime_ns,
+        source_id=source,
+        relative_path=relative,
+        physical_id=physical_identity(path, stat),
+        source_priority=source_priority,
     )
-
-
-def scan_roots(roots: list[Path]) -> tuple[list[SkillRecord], list[dict[str, str]]]:
-    records, errors, _ = scan_roots_with_stats(roots)
-    return records, errors
-
-
-def scan_roots_with_stats(
-    roots: list[Path],
-    previous: list[SkillRecord] | None = None,
-    force: bool = False,
-) -> tuple[list[SkillRecord], list[dict[str, str]], ScanStats]:
-    records: list[SkillRecord] = []
-    errors: list[dict[str, str]] = []
-    seen_paths: set[Path] = set()
-    cached = {item.instance_id: item for item in (previous or []) if item.instance_id}
-    discovered = parsed = reused = 0
-    for root in roots:
-        root = root.expanduser().resolve()
-        if not root.exists():
-            continue
-        source = portable_path(root)
-        for path in sorted(root.rglob("SKILL.md")):
-            relative = path.relative_to(root)
-            if ".system" in relative.parts or path.parent.name == "skill-router":
-                continue
-            resolved = path.resolve()
-            if resolved in seen_paths:
-                continue
-            seen_paths.add(resolved)
-            discovered += 1
-            try:
-                stat = path.stat()
-                key = identity_hash(f"{source}\n{portable_path(path)}")
-                old = cached.get(key)
-                if not force and old and old.size_bytes == stat.st_size and old.mtime_ns == stat.st_mtime_ns:
-                    records.append(old)
-                    reused += 1
-                else:
-                    records.append(parse_skill(path, source))
-                    parsed += 1
-            except (OSError, UnicodeError, ValueError) as exc:
-                errors.append({"path": portable_path(path), "error": str(exc)})
-    ordered = sorted(records, key=lambda item: (item.category, item.name, item.path))
-    return ordered, errors, ScanStats(discovered, parsed, reused)
 
 
 def identity_hash(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def physical_identity(path: Path, stat: object | None = None) -> str:
+    current = stat or path.stat()
+    inode = getattr(current, "st_ino", 0)
+    device = getattr(current, "st_dev", 0)
+    material = f"{device}:{inode}" if inode else str(path.resolve()).casefold()
+    return identity_hash(material)
