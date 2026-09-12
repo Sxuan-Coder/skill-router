@@ -1,6 +1,6 @@
 # Skill Router
 
-![Version](https://img.shields.io/badge/version-v0.5-blue)
+![Version](https://img.shields.io/badge/version-v0.5-blue) [**English**](README_EN.md)
 
 把当前任务路由到最小必要 skill 集，再读取命中 skill 的完整 `SKILL.md`。
 
