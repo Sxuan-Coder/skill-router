@@ -24,6 +24,7 @@ SENSITIVE_PATTERNS = {
     "GitHub 风格令牌": re.compile(r"\bgh[opusr]_[A-Za-z0-9]{20,}"),
     "私钥": re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
 }
+USAGE_STATS_MARKERS = {'"buckets"', '"corrections"', '"project_id"', '"skill_id"'}
 
 
 def git_files(staged: bool) -> list[Path]:
@@ -37,22 +38,46 @@ def git_files(staged: bool) -> list[Path]:
 def scan(paths: list[Path]) -> list[str]:
     findings = []
     for path in paths:
-        portable = path.as_posix()
-        if any(portable == prefix.rstrip("/") or portable.startswith(prefix) for prefix in FORBIDDEN_PATHS):
-            findings.append(f"禁止跟踪本机生成目录：{portable}")
-            continue
-        try:
-            data = path.read_bytes()
-        except OSError as exc:
-            findings.append(f"无法读取 {portable}: {exc}")
-            continue
-        if b"\x00" in data:
-            continue
-        text = data.decode("utf-8", errors="replace")
-        for label, pattern in SENSITIVE_PATTERNS.items():
-            if pattern.search(text):
-                findings.append(f"{portable}: 命中{label}")
+        findings.extend(_scan_path(path))
     return findings
+
+
+def _scan_path(path: Path) -> list[str]:
+    portable = path.as_posix()
+    if _is_forbidden_path(portable):
+        return [f"禁止跟踪本机生成目录：{portable}"]
+    if path.name == "local.key":
+        return [f"禁止跟踪本地 usage 密钥：{portable}"]
+    text, error = _read_text(path)
+    if error:
+        return [f"无法读取 {portable}: {error}"]
+    if text is None:
+        return []
+    if _looks_like_usage_stats(path, text):
+        return [f"禁止跟踪本地 usage 统计：{portable}"]
+    return _sensitive_findings(portable, text)
+
+
+def _is_forbidden_path(portable: str) -> bool:
+    return any(portable == prefix.rstrip("/") or portable.startswith(prefix) for prefix in FORBIDDEN_PATHS)
+
+
+def _looks_like_usage_stats(path: Path, text: str) -> bool:
+    return path.suffix.casefold() == ".json" and all(marker in text for marker in USAGE_STATS_MARKERS)
+
+
+def _sensitive_findings(portable: str, text: str) -> list[str]:
+    return [f"{portable}: 命中{label}" for label, pattern in SENSITIVE_PATTERNS.items() if pattern.search(text)]
+
+
+def _read_text(path: Path) -> tuple[str | None, OSError | None]:
+    try:
+        data = path.read_bytes()
+    except OSError as exc:
+        return None, exc
+    if b"\x00" in data:
+        return None, None
+    return data.decode("utf-8", errors="replace"), None
 
 
 def main() -> int:

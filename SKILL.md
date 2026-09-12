@@ -1,6 +1,6 @@
 ---
 name: skill-router
-description: 扫描、审计和查询 Codex、Agents、Agent 与 Claude Code 的用户级 skills，生成精简路书并给出带置信度、分差和理由的路由决策。用户提到技能太多、不知道该用哪个 skill、跨来源重复、刷新技能索引、检查冲突或漏命中，或要求先路由再读取完整 SKILL.md 时使用。默认只索引 Codex 用户目录，显式参数可启用多来源；不要为普通、已明确指定 skill 的任务额外触发，不搬迁、不禁用、不执行被扫描 skill。
+description: 扫描、审计和查询 Codex、Agents、Agent 与 Claude Code 的用户级 skills，生成精简路书、可解释路由决策、本地最小化使用统计和只读 placement 建议。用户提到技能太多、不知道该用哪个 skill、跨来源重复、刷新技能索引、检查冲突或漏命中、统计 skill 使用情况，或判断 skill 应放在项目级、全局还是路由仓库时使用。默认只索引 Codex 用户目录且默认关闭统计；不要为普通、已明确指定 skill 的任务额外触发，不搬迁、不禁用、不执行被扫描 skill。
 ---
 
 # Skill Router
@@ -16,13 +16,14 @@ description: 扫描、审计和查询 Codex、Agents、Agent 与 Claude Code 的
    python scripts/skill_router.py sources --json
    ```
 
-3. 若 `references/generated/catalog.json` 或 `registry.json` 不存在，或用户要求刷新，运行：
+3. 若 `references/generated/catalog.json` 或 `registry.json` 不存在，先说明下方“改善计划”的隐私边界并询问用户是否开启，然后在非交互 Agent 环境中显式传入用户选择：
 
    ```powershell
-   python scripts/skill_router.py scan
+   python scripts/skill_router.py init --improvement enable
+   python scripts/skill_router.py init --improvement decline
    ```
 
-   默认仍只扫描 `codex-user`。只有用户要求统一检查多个生态时才运行 `scan --all-user-sources`，或用可重复的 `--source <source-id>` 精确选择。扫描会增量复用未变化记录；只有需要排除缓存因素时才运行 `--full`。
+   用户直接在交互终端运行 `init` 时可回答 yes/no。Agent 不得代替用户默认开启，也不得在非交互环境等待 stdin；用户拒绝后保存选择且后续不重复询问。已有路书需要刷新时运行 `scan`，无需重新询问。默认仍只扫描 `codex-user`。只有用户要求统一检查多个生态时才使用 `--all-user-sources`，或用可重复的 `--source <source-id>` 精确选择。扫描会增量复用未变化记录；只有需要排除缓存因素时才运行 `--full`。
 
 4. 查询当前任务并读取结构化决策：
 
@@ -36,6 +37,42 @@ description: 扫描、审计和查询 Codex、Agents、Agent 与 Claude Code 的
    - `no_match`：不要强行选最接近的 skill，继续正常推理。
 6. 结合 `confidence`、`score_margin` 和 `reasons` 解释选择；不要把裸分数当成跨任务可比较的概率。
 7. 读取 preferred instance 的完整 `SKILL.md` 并遵循其指令；registry 中保留其他来源 locator 仅用于审计。
+
+## 本地使用反馈
+
+首次 `init` 必须让用户知情选择，只有用户明确同意本地收集后才启用：
+
+```powershell
+python scripts/skill_router.py init
+```
+
+- `enable`：创建本地随机密钥并开始按天聚合。
+- `decline`：只保存拒绝状态，不创建密钥，也不在后续路由时重复提醒。
+- 非交互 Agent 必须先在对话中询问，再运行 `init --improvement enable` 或 `init --improvement decline`。
+- 已初始化后如需改变选择，可显式运行 `usage enable`、`usage disable` 或 `usage decline`。
+
+启用后，`query` 自动记录它能够证明的 `recommended`。当且仅当实际发生对应行为时，再用 query 返回的 `skill_id` 显式反馈：
+
+```powershell
+python scripts/skill_router.py feedback selected <skill-id>
+python scripts/skill_router.py feedback opened <skill-id>
+python scripts/skill_router.py feedback corrected <原-skill-id> --to <新-skill-id>
+```
+
+- 不要把“准备读取”记录为 opened；完成 `SKILL.md` 读取后再记录。
+- 不要把 router 推荐记录为 selected；Agent 或用户确实采用后再记录。
+- 用 `usage status` 查看开关，用 `usage show --registry <registry>` 查看当前 registry 的聚合摘要。
+- 用 `usage disable` 停止后续记录并保留数据；只有用户明确要求清除时运行 `usage clear --yes`。
+
+本地文件只保存经过本机随机密钥 HMAC 的 skill/project 标识和按天事件计数，不保存 Prompt、任务文本、skill 名称、skill 正文、用户名、绝对路径或逐条时间戳，也不进行网络传输。
+
+改善周期默认 30 天，但这是“下一次使用时触发”的周期检查，不是后台定时任务。skill-router 不创建 Windows 计划任务、cron 或常驻服务；到期后的下一次 query 会提醒，再生成不执行操作的 placement 建议：
+
+```powershell
+python scripts/skill_router.py placement plan --registry <registry> --json
+```
+
+`project`、`global`、`router-store`、`keep` 和 `insufficient_data` 都只是建议。不要根据建议移动文件；迁移仍需独立的 dry-run、manifest、backup、verify 与 rollback 流程。v0.5 也不把热度直接加入路由分数，避免热门 skill 自我强化。
 
 ## 扫描边界
 
@@ -64,5 +101,6 @@ description: 扫描、审计和查询 Codex、Agents、Agent 与 Claude Code 的
 - 不复制代码块、凭证、环境变量值或绝对本地路径到 Markdown 路书。
 - 未经用户明确授权，不修改全局 `AGENTS.md`、`~/.codex/config.toml` 或 skill 启用状态。
 - 不把 `references/generated/`、本机评测输出、绝对路径或个人 skill 清单提交到 Git。
+- 不把 `.skill-router/usage/`、本地 usage 密钥或统计文件提交到 Git。
 - 不把开发过程中的 `.spec/` Plan/Spec 提交到 Git；它们不是运行时路书。
 - 当前目标是提高命中率，不声称减少 Codex 初始上下文。

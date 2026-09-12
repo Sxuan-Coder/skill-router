@@ -23,6 +23,8 @@ cases:
     - evals/public/cases/natural-router-trigger.yaml
     - evals/public/cases/direct-task-boundary.yaml
     - evals/public/cases/readonly-boundary.yaml
+    - evals/public/cases/local-usage-boundary.yaml
+    - evals/public/cases/improvement-consent-boundary.yaml
   defaults:
     timeout_seconds: 300
     max_turns: 6

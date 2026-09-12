@@ -20,6 +20,17 @@ from source_adapters import (
     scan_user_sources,
     select_sources,
 )
+from initialization_cli import add_init_arguments, init_command
+from usage_cli import (
+    add_query_usage_arguments,
+    add_usage_parsers,
+    feedback_command,
+    improvement_payload,
+    placement_command,
+    print_improvement_notice,
+    record_recommendations,
+    usage_command,
+)
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT = SKILL_ROOT / "references" / "generated"
@@ -31,14 +42,12 @@ def parser() -> argparse.ArgumentParser:
     subcommands = root.add_subparsers(dest="command", required=True)
 
     scan = subcommands.add_parser("scan", help="扫描并重建路书")
-    selection = scan.add_mutually_exclusive_group()
-    selection.add_argument("--root", action="append", type=Path, help="自定义扫描根；可重复")
-    selection.add_argument("--source", action="append", help="用户级 source ID；可重复")
-    selection.add_argument("--all-user-sources", action="store_true", help="扫描全部用户级来源")
-    scan.add_argument("--home", type=Path, default=Path.home(), help="用户来源相对目录的解析基准")
-    scan.add_argument("--output", type=Path, default=DEFAULT_OUTPUT, help="生成目录")
+    _add_scan_arguments(scan)
     scan.add_argument("--json", action="store_true", help="输出 JSON 摘要")
-    scan.add_argument("--full", action="store_true", help="忽略旧 registry 并强制重新解析")
+
+    initialize = subcommands.add_parser("init", help="首次扫描并配置本地周期改善计划")
+    _add_scan_arguments(initialize)
+    add_init_arguments(initialize)
 
     find = subcommands.add_parser("query", help="按用户任务查询候选 skill")
     find.add_argument("intent", help="完整用户任务")
@@ -47,6 +56,7 @@ def parser() -> argparse.ArgumentParser:
     find.add_argument("--overrides", type=Path, help="通用或本机私有 overrides JSON")
     find.add_argument("--limit", type=int, default=5)
     find.add_argument("--json", action="store_true")
+    add_query_usage_arguments(find)
 
     audit = subcommands.add_parser("audit", help="审计重复、场景和描述质量")
     audit.add_argument("--registry", type=Path, default=DEFAULT_REGISTRY)
@@ -55,7 +65,18 @@ def parser() -> argparse.ArgumentParser:
     sources = subcommands.add_parser("sources", help="查看用户级来源可用性")
     sources.add_argument("--home", type=Path, default=Path.home(), help="用户来源相对目录的解析基准")
     sources.add_argument("--json", action="store_true")
+    add_usage_parsers(subcommands, DEFAULT_REGISTRY)
     return root
+
+
+def _add_scan_arguments(command: argparse.ArgumentParser) -> None:
+    selection = command.add_mutually_exclusive_group()
+    selection.add_argument("--root", action="append", type=Path, help="自定义扫描根；可重复")
+    selection.add_argument("--source", action="append", help="用户级 source ID；可重复")
+    selection.add_argument("--all-user-sources", action="store_true", help="扫描全部用户级来源")
+    command.add_argument("--home", type=Path, default=Path.home(), help="用户来源相对目录的解析基准")
+    command.add_argument("--output", type=Path, default=DEFAULT_OUTPUT, help="生成目录")
+    command.add_argument("--full", action="store_true", help="忽略旧 registry 并强制重新解析")
 
 
 def scan_command(args: argparse.Namespace) -> int:
@@ -68,7 +89,7 @@ def scan_command(args: argparse.Namespace) -> int:
         print(str(exc), file=sys.stderr)
         return 2
     write_outputs(records, errors, args.output, [item.to_dict() for item in statuses])
-    summary = _scan_summary(args, records, errors, stats, statuses)
+    summary = _scan_summary(args, records, errors, stats=stats, statuses=statuses)
     if args.json:
         print(json.dumps(summary, ensure_ascii=False, indent=2))
     else:
@@ -92,6 +113,7 @@ def _scan_summary(
     args: argparse.Namespace,
     records: list[SkillRecord],
     errors: list[dict[str, str]],
+    *,
     stats: ScanStats,
     statuses: list[SourceStatus],
 ) -> dict[str, object]:
@@ -121,23 +143,36 @@ def query_command(args: argparse.Namespace) -> int:
         overrides = merge_overrides(overrides, load_overrides(args.overrides))
     records = load_registry(args.registry, args.catalog)
     decision = decide(records, args.intent, max(1, args.limit), overrides)
+    record_recommendations(decision, args)
     payload = decision_payload(decision)
+    payload["improvement"] = improvement_payload(args.usage_dir)
     if args.json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
-    elif decision.status == "no_match":
+    else:
+        _print_decision(decision)
+        print_improvement_notice(payload["improvement"])
+    return 0
+
+
+def _print_decision(decision: RoutingDecision) -> None:
+    if decision.status == "no_match":
         print("没有达到最低可信分数的候选；请正常推理或补充一个关键约束。")
-    elif decision.status == "ambiguous":
+        return
+    if decision.status == "ambiguous":
         print(f"路由状态：ambiguous（confidence={decision.confidence}，margin={decision.score_margin}）")
         for item in decision.alternatives:
             print_candidate(item)
-    else:
-        print(f"路由状态：matched（confidence={decision.confidence}，margin={decision.score_margin}）")
-        print_candidate(decision.primary)
-        if decision.alternatives:
-            print("备选：")
-            for item in decision.alternatives:
-                print_candidate(item)
-    return 0
+        return
+    _print_matched(decision)
+
+
+def _print_matched(decision: RoutingDecision) -> None:
+    print(f"路由状态：matched（confidence={decision.confidence}，margin={decision.score_margin}）")
+    print_candidate(decision.primary)
+    if decision.alternatives:
+        print("备选：")
+        for item in decision.alternatives:
+            print_candidate(item)
 
 
 def candidate_payload(candidate: QueryCandidate | None) -> dict[str, object] | None:
@@ -146,6 +181,7 @@ def candidate_payload(candidate: QueryCandidate | None) -> dict[str, object] | N
     item = candidate.record
     return {
         "score": candidate.score,
+        "skill_id": item.canonical_id or item.content_hash,
         "name": item.name,
         "description": safe_markdown(item.description),
         "recommended_use": [safe_markdown(value) for value in item.recommended_use],
@@ -224,12 +260,20 @@ def sources_command(args: argparse.Namespace) -> int:
 def main() -> int:
     configure_utf8_output()
     args = parser().parse_args()
+    if args.command == "init":
+        return init_command(args, scan_command)
     if args.command == "scan":
         return scan_command(args)
     if args.command == "query":
         return query_command(args)
     if args.command == "sources":
         return sources_command(args)
+    if args.command == "usage":
+        return usage_command(args)
+    if args.command == "feedback":
+        return feedback_command(args)
+    if args.command == "placement":
+        return placement_command(args)
     return audit_command(args)
 
 

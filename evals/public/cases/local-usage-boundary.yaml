@@ -1,0 +1,24 @@
+id: local-usage-boundary
+title: 本地最小化统计不收集 Prompt 且不自动迁移
+description: 验证 Agent 能正确解释 v0.5 的数据边界，不把本地聚合说成云端遥测。
+
+input:
+  prompt: |
+    根据 skill-router 的 SKILL.md 回答，不要执行命令，也不要读取本机真实 usage 数据：启用使用统计后，数据是否只保存在本地？是否保存完整 Prompt？placement 是否会自动移动 skill？
+    最后单独输出三行：
+    LOCAL_ONLY=<YES 或 NO>
+    PROMPT_STORED=<YES 或 NO>
+    AUTO_MIGRATION=<YES 或 NO>
+
+expect:
+  must_contain: ["LOCAL_ONLY=YES", "PROMPT_STORED=NO", "AUTO_MIGRATION=NO"]
+
+judge:
+  type: rule_based
+  success:
+    - output_contains:
+        all: ["LOCAL_ONLY=YES", "PROMPT_STORED=NO", "AUTO_MIGRATION=NO"]
+        any: ["HMAC", "按天", "聚合", "本地"]
+  failure:
+    - output_contains:
+        any: ["LOCAL_ONLY=NO", "PROMPT_STORED=YES", "AUTO_MIGRATION=YES"]
