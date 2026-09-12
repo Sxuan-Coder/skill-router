@@ -1,5 +1,7 @@
 # Skill Router
 
+![Version](https://img.shields.io/badge/version-v0.5-blue)
+
 把当前任务路由到最小必要 skill 集，再读取命中 skill 的完整 `SKILL.md`。
 
 当用户级目录下安装了太多 skill、不知道该用哪个、跨来源重复、需要刷新技能索引、检查冲突或漏命中、统计 skill 使用情况，或判断某个 skill 应放在项目级、全局还是路由仓库时，使用本 skill。
@@ -39,7 +41,28 @@ python scripts/skill_router.py query "帮我把这份文档导出为 PDF" --limi
 python scripts/skill_router.py audit
 ```
 
-完整路由工作流、使用反馈命令（`feedback selected/opened/corrected`）、placement 计划和覆盖配置见 [SKILL.md](SKILL.md)。
+完整路由工作流、使用反馈命令（`feedback selected/opened/corrected`）、placement 计划和覆盖配置见 [SKILL.md](SKILL.md)；逐步操作细节见 **[使用手册 USAGE.md](USAGE.md)**。
+
+## 新手小白
+
+如果你刚接触 skill、不知道怎么安装和上手，最简单的方式是把下面这段提示词直接发给你的 AI Agent（Codex / Claude Code 等已安装 skills 机制的 Agent），让它全程带你完成：
+
+```text
+我想安装并开始使用 skill-router 这个 skill，请帮我完成以下步骤：
+
+1. 在终端运行 npx skills add Sxuan-Coder/skill-router，把 skill 安装到我的用户级 skills 目录；
+2. 安装完成后，进入该 skill 的目录，运行 python scripts/skill_router.py sources --json 查看我机器上有哪些技能来源；
+3. 运行 python scripts/skill_router.py init 完成首次初始化——注意：它会询问是否开启本地使用统计，
+   请先向我解释这项统计只在本机保存匿名聚合数据、不会联网，然后由我自己回答 yes 或 no，不要替我决定；
+4. 初始化后运行 python scripts/skill_router.py scan 扫描我已安装的 skill；
+5. 最后教我怎么用：以后我描述一个任务，你就运行
+   python scripts/skill_router.py query "<任务描述>" --limit 5 --json，
+   根据返回结果告诉我会用哪个 skill、为什么，然后按那个 skill 的 SKILL.md 工作。
+
+请一步一步执行，每步完成后用一句话告诉我发生了什么。
+```
+
+装好之后，你只需要记住一个习惯：**遇到不知道用哪个 skill 的任务，就让 Agent 先 query 一下**，它会给出带理由的推荐。
 
 ## 测试
 
