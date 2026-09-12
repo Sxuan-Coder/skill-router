@@ -12,6 +12,14 @@
 - **本地最小化使用统计**：首次 `init` 必须用户知情选择。启用后本地文件只保存经过本机随机密钥 HMAC 的 skill/project 标识和按天事件计数——不保存 Prompt、任务文本、skill 名称、用户名、绝对路径或逐条时间戳，也不进行网络传输。
 - **只读 placement 建议**：默认 30 天"下一次使用时触发"的周期检查，生成 `project` / `global` / `router-store` / `keep` 等建议。只是建议——不移动文件，不创建计划任务或常驻服务，热度也不参与路由评分。
 
+## 安装
+
+一键安装本 skill：
+
+```bash
+npx skills add Sxuan-Coder/skill-router
+```
+
 ## 快速开始
 
 ```powershell
